@@ -33,6 +33,9 @@ class Tui(QtCore.QObject):
     def __init__(self, app):
         self.app = app
         super(Tui, self).__init__()
+
+        self.loop_time = 0.
+        
         self.Kp = 5
         self.Ki = 0.0
         self.Kd = 0.0
@@ -57,8 +60,9 @@ class Tui(QtCore.QObject):
         self.timer.start(TIMER_TICK)
 
     def setupPid(self):
-        self.pid_left = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.angle_setpoint, sample_time=0.01, output_limits=(-MAX_SPEED,MAX_SPEED))
-        self.pid_right = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.angle_setpoint, sample_time=0.01, output_limits=(-MAX_SPEED,MAX_SPEED))
+        SAMPLE_TIME = TIMER_TICK / 1000.
+        self.pid_left = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.angle_setpoint, sample_time=SAMPLE_TIME, output_limits=(-MAX_SPEED,MAX_SPEED))
+        self.pid_right = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.angle_setpoint, sample_time=SAMPLE_TIME, output_limits=(-MAX_SPEED,MAX_SPEED))
         self.pi = pigpio.pi()
         self.ec_left = EncoderCallback("enc1")
         self.dec_left = decoder(self.pi, *DECODER_LEFT_PINS, self.ec_left.callback)
@@ -93,6 +97,7 @@ class Tui(QtCore.QObject):
         
     def timer_tick(self):
         try:
+            t0 = time.time()
             # self.mpu.processValues()
             # self.mpu.madgwickFilter(self.mpu.ax, -self.mpu.ay, self.mpu.az,
             #                         math.radians(self.mpu.gx), -math.radians(self.mpu.gy), -math.radians(self.mpu.gz), 
@@ -112,21 +117,21 @@ class Tui(QtCore.QObject):
             self.pid_right.Ki = self.Ki
             self.pid_left.Kd = self.Kd
             self.pid_right.Kd = self.Kd
-        
+
             self.delta_left = self.ec_left.pos - self.last_ec_left
             self.delta_right = self.ec_right.pos - self.last_ec_right
             self.mot_left = self.pid_left(self.mpu.roll)
             self.mot_right = self.pid_right(self.mpu.roll)
-            # self.mot_left = 0
-            # self.mot_right = MAX_SPEED
-
+            self.angle_error = self.angle_setpoint - self.mpu.roll
 
             motors.setSpeeds(-int(self.mot_left), -int(self.mot_right))
             self.last_ec_left = self.ec_left.pos
             self.last_ec_right = self.ec_right.pos
-            msg = f'{{ "delta_left": {self.delta_left}, "delta_right": {self.delta_right}, "setpoint_left": {self.pid_left.setpoint}, "setpoint_right": {self.pid_right.setpoint}, "mot_left": {self.mot_left:.2f}, "mot_right": {self.mot_right:.2f}, "ec_left_pos": {self.ec_left.pos}, "ec_right_pos": {self.ec_right.pos}, "pitch": {self.mpu.pitch:.2f}, "roll": {self.mpu.roll:.2f}, "yaw": {self.mpu.yaw:.2f} }}'
-            # print(msg)
+            msg = f'{{ "delta_left": {self.delta_left}, "delta_right": {self.delta_right}, "setpoint_left": {self.pid_left.setpoint}, "setpoint_right": {self.pid_right.setpoint}, "mot_left": {self.mot_left:.2f}, "mot_right": {self.mot_right:.2f}, "ec_left_pos": {self.ec_left.pos}, "ec_right_pos": {self.ec_right.pos}, "pitch": {self.mpu.pitch:.2f}, "roll": {self.mpu.roll:.2f}, "yaw": {self.mpu.yaw:.2f}, "angle_error": {self.angle_error}, "loop_time": {self.loop_time} }}'
             self.client.publish("robitt/motor", msg)
+
+            t1 = time.time()
+            self.loop_time = t1-t0
         except KeyboardInterrupt:
             self.stop()
 
@@ -147,7 +152,6 @@ class Tui(QtCore.QObject):
     @QtCore.pyqtSlot(str, str)
     def on_messageSignal(self, topic, payload):
         if topic == 'robitt/control/angle_setpoint':
-            print("Change angle setpoint to", payload)
             self.angle_setpoint = float(payload)
         elif topic == 'robitt/control/p':
             self.Kp = float(payload)
@@ -155,8 +159,6 @@ class Tui(QtCore.QObject):
             self.Ki = float(payload)
         elif topic == 'robitt/control/d':
             self.Kd = float(payload)
-
-
 
 if __name__ == "__main__":
     app = QtCore.QCoreApplication(sys.argv)
