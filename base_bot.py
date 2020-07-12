@@ -36,9 +36,9 @@ class Tui(QtCore.QObject):
 
         self.loop_time = 0.
         
-        self.Kp = 5
-        self.Ki = 0.0
-        self.Kd = 0.0
+        self.Kp = 25
+        self.Ki = 5.0
+        self.Kd = 1.25
         self.angle_setpoint = 0
 
         self.last_ec_left = 0
