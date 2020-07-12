@@ -2,20 +2,14 @@ import sys
 import math
 from PyQt5 import QtCore
 from mqtt_qobject import MqttClient
-#from pololu_drv8835_rpi import motors, MAX_SPEED
+from mpu import mpu
 from dual_tb9051ftg_rpi import motors, MAX_SPEED
 from read_encoder import decoder
-from mpu9250_complementary import MPU
-# from mpu9250_madgwick import MPU
 from simple_pid import PID
 import pigpio
 import time
 
 TIMER_TICK = 10
-GYRO = 2000      # 250, 500, 1000, 2000 [deg/s]
-ACC = 16         # 2, 4, 7, 16 [g]
-MAG = 16        # 14, 16 [bit]
-TAU = 0.98
 
 DECODER_LEFT_PINS = (20,21)
 DECODER_RIGHT_PINS = (19,16)
@@ -51,8 +45,8 @@ class Tui(QtCore.QObject):
         self.mot_right = 0
 
 
+        self.mpu = mpu()
         self.setupPid()
-        self.setupGyro()
         self.setupMqtt()
         
         self.timer = QtCore.QTimer(self)
@@ -69,22 +63,6 @@ class Tui(QtCore.QObject):
         self.ec_right = EncoderCallback("enc2")
         self.dec_right = decoder(self.pi, *DECODER_RIGHT_PINS, self.ec_right.callback)
 
-    def setupGyro(self):
-        self.mpu = MPU(GYRO, ACC, TAU)
-
-        # Set up the IMU and mag sensors
-        self.mpu.setUp()
-        
-        # self.mpu.setUpIMU()
-        # self.mpu.setUpMAG()
-
-        # Calibrate the mag or provide values that have been verified with the visualizer
-        # mpu.calibrateMagGuide()
-        # bias = [145, 145, -155]
-        # scale = [1.10, 1.05, 1.05]
-        # self.mpu.setMagCalibration(bias, scale)
-        # Calibrate gyro with N points
-        self.mpu.calibrateGyro(500)
 
         
     def setupMqtt(self):
@@ -105,7 +83,7 @@ class Tui(QtCore.QObject):
 
             # self.mpu.attitudeEuler()
             try:
-                self.mpu.compFilter()
+                self.mpu.filter()
             except OSError:
                 self.stop()
 
@@ -120,14 +98,15 @@ class Tui(QtCore.QObject):
 
             self.delta_left = self.ec_left.pos - self.last_ec_left
             self.delta_right = self.ec_right.pos - self.last_ec_right
-            self.mot_left = self.pid_left(self.mpu.roll)
-            self.mot_right = self.pid_right(self.mpu.roll)
-            self.angle_error = self.angle_setpoint - self.mpu.roll
+            angle = self.mpu.angle()
+            self.mot_left = self.pid_left(angle)
+            self.mot_right = self.pid_right(angle)
+            angle_error = self.angle_setpoint - angle
 
             motors.setSpeeds(-int(self.mot_left), -int(self.mot_right))
             self.last_ec_left = self.ec_left.pos
             self.last_ec_right = self.ec_right.pos
-            msg = f'{{ "delta_left": {self.delta_left}, "delta_right": {self.delta_right}, "setpoint_left": {self.pid_left.setpoint}, "setpoint_right": {self.pid_right.setpoint}, "mot_left": {self.mot_left:.2f}, "mot_right": {self.mot_right:.2f}, "ec_left_pos": {self.ec_left.pos}, "ec_right_pos": {self.ec_right.pos}, "pitch": {self.mpu.pitch:.2f}, "roll": {self.mpu.roll:.2f}, "yaw": {self.mpu.yaw:.2f}, "angle_error": {self.angle_error}, "loop_time": {self.loop_time} }}'
+            msg = f'{{ "delta_left": {self.delta_left}, "delta_right": {self.delta_right}, "setpoint_left": {self.pid_left.setpoint}, "setpoint_right": {self.pid_right.setpoint}, "mot_left": {self.mot_left:.2f}, "mot_right": {self.mot_right:.2f}, "ec_left_pos": {self.ec_left.pos}, "ec_right_pos": {self.ec_right.pos}, "angle": {angle:.2f}, "angle_error": {angle_error:.2f}, "loop_time": {self.loop_time:.4f} }}'
             self.client.publish("robitt/motor", msg)
 
             t1 = time.time()
