@@ -81,32 +81,40 @@ class Tui(QtCore.QObject):
         self.timer.start(10)
         
     def timer_tick(self):
-        # self.mpu.processValues()
-        # self.mpu.madgwickFilter(self.mpu.ax, -self.mpu.ay, self.mpu.az,
-        #                         math.radians(self.mpu.gx), -math.radians(self.mpu.gy), -math.radians(self.mpu.gz), 
-        #                         self.mpu.my, -self.mpu.mx, self.mpu.mz, 100)
-
-        # self.mpu.attitudeEuler()
         try:
-            self.mpu.compFilter()
-        except OSError:
-            motors.setSpeeds(0, 0)
-            sys.exit(0)
-            
-        self.delta_left = self.ec_left.pos - self.last_ec_left
-        self.delta_right = self.ec_right.pos - self.last_ec_right
-        self.mot_left = self.pid_left(self.mpu.roll)
-        self.mot_right = self.pid_right(self.mpu.roll)
-        # self.mot_left = 0
-        # self.mot_right = MAX_SPEED
+            # self.mpu.processValues()
+            # self.mpu.madgwickFilter(self.mpu.ax, -self.mpu.ay, self.mpu.az,
+            #                         math.radians(self.mpu.gx), -math.radians(self.mpu.gy), -math.radians(self.mpu.gz), 
+            #                         self.mpu.my, -self.mpu.mx, self.mpu.mz, 100)
+
+            # self.mpu.attitudeEuler()
+            try:
+                self.mpu.compFilter()
+            except OSError:
+                self.stop()
+
+            self.delta_left = self.ec_left.pos - self.last_ec_left
+            self.delta_right = self.ec_right.pos - self.last_ec_right
+            self.mot_left = self.pid_left(self.mpu.roll)
+            self.mot_right = self.pid_right(self.mpu.roll)
+            # self.mot_left = 0
+            # self.mot_right = MAX_SPEED
 
 
-        motors.setSpeeds(-int(self.mot_left), -int(self.mot_right))
-        self.last_ec_left = self.ec_left.pos
-        self.last_ec_right = self.ec_right.pos
-        msg = f'{{ "delta_left": {self.delta_left}, "delta_right": {self.delta_right}, "setpoint_left": {self.pid_left.setpoint}, "setpoint_right": {self.pid_right.setpoint}, "mot_left": {self.mot_left}, "mot_right": {self.mot_right}, "ec_left_pos": {self.ec_left.pos}, "ec_right_pos": {self.ec_right.pos}, "pitch": {self.mpu.pitch}, "roll": {self.mpu.roll}, "yaw": {self.mpu.yaw} }}'
-        # print(msg)
-        self.client.publish("robitt/motor", msg)
+            motors.setSpeeds(-int(self.mot_left), -int(self.mot_right))
+            self.last_ec_left = self.ec_left.pos
+            self.last_ec_right = self.ec_right.pos
+            msg = f'{{ "delta_left": {self.delta_left}, "delta_right": {self.delta_right}, "setpoint_left": {self.pid_left.setpoint}, "setpoint_right": {self.pid_right.setpoint}, "mot_left": {self.mot_left:.2f}, "mot_right": {self.mot_right:.2f}, "ec_left_pos": {self.ec_left.pos}, "ec_right_pos": {self.ec_right.pos}, "pitch": {self.mpu.pitch:.2f}, "roll": {self.mpu.roll:.2f}, "yaw": {self.mpu.yaw:.2f} }}'
+            # print(msg)
+            self.client.publish("robitt/motor", msg)
+        except KeyboardInterrupt:
+            self.stop()
+
+
+    def stop(self):
+        motors.setSpeeds(0,0 )
+        self.app.quit()
+        
         
     @QtCore.pyqtSlot(int)
     def on_stateChanged(self, state):
