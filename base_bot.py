@@ -11,6 +11,7 @@ from simple_pid import PID
 import pigpio
 import time
 
+TIMER_TICK = 10
 GYRO = 2000      # 250, 500, 1000, 2000 [deg/s]
 ACC = 16         # 2, 4, 7, 16 [g]
 MAG = 16        # 14, 16 [bit]
@@ -32,17 +33,10 @@ class Tui(QtCore.QObject):
     def __init__(self, app):
         self.app = app
         super(Tui, self).__init__()
-        self.Kp = 10
-        self.Ki = 0.1
-        self.Kd = 0.01
-        
-        self.pid_left = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=0, sample_time=0.01, output_limits=(-MAX_SPEED,MAX_SPEED))
-        self.pid_right = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=0, sample_time=0.01, output_limits=(-MAX_SPEED,MAX_SPEED))
-        self.pi = pigpio.pi()
-        self.ec_left = EncoderCallback("enc1")
-        self.dec_left = decoder(self.pi, *DECODER_LEFT_PINS, self.ec_left.callback)
-        self.ec_right = EncoderCallback("enc2")
-        self.dec_right = decoder(self.pi, *DECODER_RIGHT_PINS, self.ec_right.callback)
+        self.Kp = 5
+        self.Ki = 0.0
+        self.Kd = 0.0
+        self.angle_setpoint = 0
 
         self.last_ec_left = 0
         self.last_ec_right = 0
@@ -53,14 +47,23 @@ class Tui(QtCore.QObject):
         self.mot_left = 0
         self.mot_right = 0
 
+
+        self.setupPid()
         self.setupGyro()
         self.setupMqtt()
         
         self.timer = QtCore.QTimer(self)
         self.timer.timeout.connect(self.timer_tick)
-        self.timer.start(10)
+        self.timer.start(TIMER_TICK)
 
-        
+    def setupPid(self):
+        self.pid_left = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.angle_setpoint, sample_time=0.01, output_limits=(-MAX_SPEED,MAX_SPEED))
+        self.pid_right = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.angle_setpoint, sample_time=0.01, output_limits=(-MAX_SPEED,MAX_SPEED))
+        self.pi = pigpio.pi()
+        self.ec_left = EncoderCallback("enc1")
+        self.dec_left = decoder(self.pi, *DECODER_LEFT_PINS, self.ec_left.callback)
+        self.ec_right = EncoderCallback("enc2")
+        self.dec_right = decoder(self.pi, *DECODER_RIGHT_PINS, self.ec_right.callback)
 
     def setupGyro(self):
         self.mpu = MPU(GYRO, ACC, TAU)
@@ -101,6 +104,15 @@ class Tui(QtCore.QObject):
             except OSError:
                 self.stop()
 
+            self.pid_left.setpoint = self.angle_setpoint
+            self.pid_right.setpoint = self.angle_setpoint
+            self.pid_left.Kp = self.Kp
+            self.pid_right.Kp = self.Kp
+            self.pid_left.Ki = self.Ki
+            self.pid_right.Ki = self.Ki
+            self.pid_left.Kd = self.Kd
+            self.pid_right.Kd = self.Kd
+        
             self.delta_left = self.ec_left.pos - self.last_ec_left
             self.delta_right = self.ec_right.pos - self.last_ec_right
             self.mot_left = self.pid_left(self.mpu.roll)
@@ -136,17 +148,13 @@ class Tui(QtCore.QObject):
     def on_messageSignal(self, topic, payload):
         if topic == 'robitt/control/angle_setpoint':
             print("Change angle setpoint to", payload)
-            self.pid_left.setpoint = float(payload)
-            self.pid_right.setpoint = float(payload)
+            self.angle_setpoint = float(payload)
         elif topic == 'robitt/control/p':
-            self.pid_left.Kp = float(payload)
-            self.pid_right.Kp = float(payload)
+            self.Kp = float(payload)
         elif topic == 'robitt/control/i':
-            self.pid_left.Ki = float(payload)
-            self.pid_right.Ki = float(payload)
+            self.Ki = float(payload)
         elif topic == 'robitt/control/d':
-            self.pid_left.Kd = float(payload)
-            self.pid_right.Kd = float(payload)
+            self.Kd = float(payload)
 
 
 
