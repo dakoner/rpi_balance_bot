@@ -2,7 +2,7 @@ import sys
 import math
 from PyQt5 import QtCore
 from mqtt_qobject import MqttClient
-from pid import pid
+from position_pid import pid
 from dual_tb9051ftg_rpi import motors, MAX_SPEED
 import time
 
@@ -62,6 +62,7 @@ class Tui(QtCore.QObject):
     def on_stateChanged(self, state):
         if state == MqttClient.Connected:
             self.client.subscribe("robitt/control/enabled")
+            self.client.subscribe("robitt/control/setpoint")
             self.client.subscribe("robitt/control/left_setpoint")
             self.client.subscribe("robitt/control/right_setpoint")
             self.client.subscribe("robitt/control/p")
@@ -71,9 +72,12 @@ class Tui(QtCore.QObject):
     @QtCore.pyqtSlot(str, str)
     def on_messageSignal(self, topic, payload):
         try:
+            if topic == 'robitt/control/setpoint':
+                self.pid.left_setpoint = float(payload)
+                self.pid.right_setpoint = float(payload)
             if topic == 'robitt/control/left_setpoint':
                 self.pid.left_setpoint = float(payload)
-            if topic == 'robitt/control/right_setpoint':
+            elif topic == 'robitt/control/right_setpoint':
                 self.pid.right_setpoint = float(payload)
             elif topic == 'robitt/control/p':
                 self.pid.Kp = float(payload)
