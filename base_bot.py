@@ -23,6 +23,8 @@ class Tui(QtCore.QObject):
         self.encoders = Encoders()
         self.ec_left_last = 0
         self.ec_right_last = 0
+
+        self.enabled = True
         
         self.mpu = mpu()
 
@@ -63,6 +65,11 @@ class Tui(QtCore.QObject):
             except OSError:
                 self.stop()
 
+            if self.enabled:
+                motors.enable()
+            else:
+                motors.disable()
+                
             self.pid_left.setpoint = self.left_setpoint
             self.pid_right.setpoint = self.right_setpoint
             self.pid_left.Kp = self.Kp
@@ -76,15 +83,16 @@ class Tui(QtCore.QObject):
             delta_right = self.encoders.ec_right.pos - self.ec_right_last
             self.ec_left_last = self.encoders.ec_left.pos
             self.ec_right_last = self.encoders.ec_right.pos
-            
+
             self.mot_left = self.pid_left(delta_left)
             self.mot_right = self.pid_right(delta_right)
             # self.mot_left = self.left_setpoint
             # self.mot_right = self.right_setpoint
             motors.setSpeeds(int(self.mot_left), int(self.mot_right))
+
             
             
-            msg = f'{{ "ec_left_pos": {self.encoders.ec_left.pos}, "ec_right_pos": {self.encoders.ec_right.pos}, "left_setpoint": {self.left_setpoint}, "right_setpoint": {self.right_setpoint}, "delta_left": {delta_left:.2f}, "delta_right": {delta_right:.2f}, "mot_left": {self.mot_left:.2f}, "mot_right": {self.mot_right:.2f}, "loop_time": {self.loop_time:.4f} }}'
+            msg = f'{{ "ec_left_pos": {self.encoders.ec_left.pos}, "ec_right_pos": {self.encoders.ec_right.pos}, "left_setpoint": {self.left_setpoint}, "right_setpoint": {self.right_setpoint}, "delta_left": {delta_left:.2f}, "delta_right": {delta_right:.2f}, "mot_left": {self.mot_left:.2f}, "mot_right": {self.mot_right:.2f}, "loop_time": {self.loop_time:.4f}, "enabled": {self.enabled} }}'
             self.client.publish("robitt/motor", msg)
 
             t1 = time.time()
@@ -101,6 +109,7 @@ class Tui(QtCore.QObject):
     @QtCore.pyqtSlot(int)
     def on_stateChanged(self, state):
         if state == MqttClient.Connected:
+            self.client.subscribe("robitt/control/enabled")
             self.client.subscribe("robitt/control/left_setpoint")
             self.client.subscribe("robitt/control/right_setpoint")
             self.client.subscribe("robitt/control/p")
@@ -120,6 +129,8 @@ class Tui(QtCore.QObject):
                 self.Ki = float(payload)
             elif topic == 'robitt/control/d':
                 self.Kd = float(payload)
+            elif topic == 'robitt/control/enabled':
+                self.enabled = bool(int(payload))
         except ValueError as e:
             print(f"Failed to set {topic} to {payload}: {e}")
 
