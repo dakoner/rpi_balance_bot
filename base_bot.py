@@ -21,12 +21,16 @@ class Tui(QtCore.QObject):
         self.mot_right = 0
 
         self.encoders = Encoders()
+        self.ec_left_last = 0
+        self.ec_right_last = 0
+        
         self.mpu = mpu()
 
-        self.Kp = 20
-        self.Ki = 1
-        self.Kd = 0.125
-        self.angle_setpoint = 0
+        self.Kp = 5
+        self.Ki = 0.2
+        self.Kd = 0.1
+        self.left_setpoint = 0
+        self.right_setpoint = 0
         
         self.setupPid()
         self.setupMqtt()
@@ -37,8 +41,8 @@ class Tui(QtCore.QObject):
 
     def setupPid(self):
         SAMPLE_TIME = TIMER_TICK / 1000.
-        self.pid_left = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.angle_setpoint, sample_time=SAMPLE_TIME, output_limits=(-MAX_SPEED,MAX_SPEED))
-        self.pid_right = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.angle_setpoint, sample_time=SAMPLE_TIME, output_limits=(-MAX_SPEED,MAX_SPEED))
+        self.pid_left = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.left_setpoint, sample_time=SAMPLE_TIME, output_limits=(-MAX_SPEED,MAX_SPEED))
+        self.pid_right = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.right_setpoint, sample_time=SAMPLE_TIME, output_limits=(-MAX_SPEED,MAX_SPEED))
 
 
         
@@ -59,8 +63,8 @@ class Tui(QtCore.QObject):
             except OSError:
                 self.stop()
 
-            self.pid_left.setpoint = self.angle_setpoint
-            self.pid_right.setpoint = self.angle_setpoint
+            self.pid_left.setpoint = self.left_setpoint
+            self.pid_right.setpoint = self.right_setpoint
             self.pid_left.Kp = self.Kp
             self.pid_right.Kp = self.Kp
             self.pid_left.Ki = self.Ki
@@ -68,13 +72,19 @@ class Tui(QtCore.QObject):
             self.pid_left.Kd = self.Kd
             self.pid_right.Kd = self.Kd
 
-            angle = self.mpu.angle()
-            angle_error = self.angle_setpoint - angle
-            self.mot_left = self.pid_left(angle)
-            self.mot_right = self.pid_right(angle)
-            motors.setSpeeds(-int(self.mot_left), -int(self.mot_right))
+            delta_left = self.encoders.ec_left.pos - self.ec_left_last
+            delta_right = self.encoders.ec_right.pos - self.ec_right_last
+            self.ec_left_last = self.encoders.ec_left.pos
+            self.ec_right_last = self.encoders.ec_right.pos
             
-            msg = f'{{ "ec_left_pos": {self.encoders.ec_left.pos}, "ec_right_pos": {self.encoders.ec_right.pos}, "angle_setpoint": {self.angle_setpoint}, "angle": {angle:.2f}, "angle_error": {angle_error:.2f}, "mot_left": {self.mot_left:.2f}, "mot_right": {self.mot_right:.2f}, "loop_time": {self.loop_time:.4f} }}'
+            self.mot_left = self.pid_left(delta_left)
+            self.mot_right = self.pid_right(delta_right)
+            # self.mot_left = self.left_setpoint
+            # self.mot_right = self.right_setpoint
+            motors.setSpeeds(int(self.mot_left), int(self.mot_right))
+            
+            
+            msg = f'{{ "ec_left_pos": {self.encoders.ec_left.pos}, "ec_right_pos": {self.encoders.ec_right.pos}, "left_setpoint": {self.left_setpoint}, "right_setpoint": {self.right_setpoint}, "delta_left": {delta_left:.2f}, "delta_right": {delta_right:.2f}, "mot_left": {self.mot_left:.2f}, "mot_right": {self.mot_right:.2f}, "loop_time": {self.loop_time:.4f} }}'
             self.client.publish("robitt/motor", msg)
 
             t1 = time.time()
@@ -91,21 +101,27 @@ class Tui(QtCore.QObject):
     @QtCore.pyqtSlot(int)
     def on_stateChanged(self, state):
         if state == MqttClient.Connected:
-            self.client.subscribe("robitt/control/angle_setpoint")
+            self.client.subscribe("robitt/control/left_setpoint")
+            self.client.subscribe("robitt/control/right_setpoint")
             self.client.subscribe("robitt/control/p")
             self.client.subscribe("robitt/control/i")
             self.client.subscribe("robitt/control/d")
 
     @QtCore.pyqtSlot(str, str)
     def on_messageSignal(self, topic, payload):
-        if topic == 'robitt/control/angle_setpoint':
-            self.angle_setpoint = float(payload)
-        elif topic == 'robitt/control/p':
-            self.Kp = float(payload)
-        elif topic == 'robitt/control/i':
-            self.Ki = float(payload)
-        elif topic == 'robitt/control/d':
-            self.Kd = float(payload)
+        try:
+            if topic == 'robitt/control/left_setpoint':
+                self.left_setpoint = float(payload)
+            if topic == 'robitt/control/right_setpoint':
+                self.right_setpoint = float(payload)
+            elif topic == 'robitt/control/p':
+                self.Kp = float(payload)
+            elif topic == 'robitt/control/i':
+                self.Ki = float(payload)
+            elif topic == 'robitt/control/d':
+                self.Kd = float(payload)
+        except ValueError as e:
+            print(f"Failed to set {topic} to {payload}: {e}")
 
 if __name__ == "__main__":
     app = QtCore.QCoreApplication(sys.argv)
