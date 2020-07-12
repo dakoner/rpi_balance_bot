@@ -24,6 +24,9 @@ class mpu:
         # Calibrate gyro with N points
         self.mpu.calibrateGyro(500)
 
+    def timer(self):
+        self.mpu.attitudeEuler()
+
     def filter(self):
         # self.mpu.processValues()
         # self.mpu.madgwickFilter(self.mpu.ax, -self.mpu.ay, self.mpu.az,
