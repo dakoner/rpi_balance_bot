@@ -3,6 +3,8 @@ import math
 from PyQt5 import QtCore
 from mqtt_qobject import MqttClient
 from position_pid import pid
+# from velocity_pid import pid
+# from balance_pid import pid
 from dual_tb9051ftg_rpi import motors, MAX_SPEED
 import time
 
@@ -42,7 +44,9 @@ class Tui(QtCore.QObject):
             try:
                 pid_msg = self.pid.update()
             except OSError:
+                print("pid update failed.")
                 self.stop()
+                return
             
             msg = f'{{"pid": {{ {pid_msg} }}, "loop_time": {self.loop_time:.4f}, "enabled": {self.enabled} }}'
             self.client.publish("robitt/motor", msg)
