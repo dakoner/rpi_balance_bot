@@ -1,6 +1,5 @@
 from simple_pid import PID
 from encoders import Encoders
-from mpu import mpu
 from dual_tb9051ftg_rpi import motors, MAX_SPEED
 
 class pid:
@@ -19,7 +18,6 @@ class pid:
         self.pid_left = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.left_setpoint, sample_time=sample_time, output_limits=(-MAX_SPEED,MAX_SPEED))
         self.pid_right = PID(Kp=self.Kp, Ki=self.Ki, Kd=self.Kd, setpoint=self.right_setpoint, sample_time=sample_time, output_limits=(-MAX_SPEED,MAX_SPEED))
 
-        self.mpu = mpu()
         self.motors = motors
 
     def update(self):
